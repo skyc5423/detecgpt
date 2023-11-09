@@ -3,24 +3,14 @@ import base64
 from glob import glob
 import requests
 import json
+from PIL import Image, ImageDraw
+import numpy as np
+from model.groudingdino import Inferencer
+from tqdm import tqdm
+from prompts import *
 
 # OpenAI API Key
-api_key = os.environ['OPENAI_API_KEY']
-
-prompts = '''
-Respond in a loadable JSON format.
-Task:
-Look at the given image and fill the JSON value with given instruction. 
-JSON object has two keys named "description", "objects". 
-Please fill the "description" value with the one sentence expression as detail as you can.
-Then, please fill the "objects" value with the list of objects you can find in the given image.
-Response Format:
-{
-"description": str,
-"objects": list
-}
-* Make sure the JSON is loadable with json.loads().
-    '''
+api_key = os.environ['OPENAI_API_KEY_BUF']
 
 headers = {
     "Content-Type": "application/json",
@@ -28,7 +18,7 @@ headers = {
 }
 
 
-def get_payload(base64_image):
+def get_payload(base64_image, prompt):
     payload = {
         "model": "gpt-4-vision-preview",
         "messages": [
@@ -37,7 +27,7 @@ def get_payload(base64_image):
                 "content": [
                     {
                         "type": "text",
-                        "text": prompts
+                        "text": prompt
                     },
                     {
                         "type": "image_url",
@@ -59,15 +49,30 @@ def encode_image(image_path):
 
 
 def main():
-    img_list = glob('data/baeksan-dc/220704/L/B/*')
-    img_fn = img_list[0]
-    base64_image = encode_image(img_fn)
-    payload = get_payload(base64_image)
-    response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+    img_list = glob('data/google_dining/*')
+    # img_list = glob('data/baeksan-dc/220704/L/B/*')
+    for idx, img_fn in enumerate(tqdm(img_list)):
+        base64_image = encode_image(img_fn)
+        payload = get_payload(base64_image, prompt_dish_multiple)
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
 
-    content = response.json()['choices'][0]['message']['content']
-    json.loads(''.join(content.split('\n')[1:-1]))
-
+        content = response.json()['choices'][0]['message']['content']
+        print(content)
+        output = json.loads(''.join(content.split('\n')[1:-1]))
+        # print(output)
+        inferencer = Inferencer('cpu')
+        img = Image.open(img_fn).resize((512, 512))
+        draw = ImageDraw.Draw(img)
+        for obj in output['foods']:
+            bboxes = inferencer.predict_dino(img, obj)
+            for bbox in bboxes:
+                r, g, b = np.random.randint(0, 255, 3)
+                bbox = tuple(np.int16(bbox.detach().cpu().numpy()))
+                draw.rectangle(bbox, outline=(r, g, b), width=1)
+                if isinstance(obj, dict):
+                    obj = obj['name']
+                draw.text(bbox, obj, (r, g, b))
+        img.save(f'output/{img_fn.split("/")[-1]}')
 
 if __name__ == '__main__':
     main()
