@@ -9,7 +9,7 @@ from huggingface_hub import hf_hub_download
 import groundingdino.datasets.transforms as T
 
 
-class Inferencer:
+class GDinoInferencer:
     def __init__(self, device):
         self.device = device
         ckpt_repo_id = "ShilongLiu/GroundingDINO"

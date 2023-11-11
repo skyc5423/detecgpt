@@ -5,7 +5,7 @@ import requests
 import json
 from PIL import Image, ImageDraw
 import numpy as np
-from model.groudingdino import Inferencer
+from model.groudingdino import GDinoInferencer
 from tqdm import tqdm
 from prompts import *
 
@@ -60,7 +60,7 @@ def main():
         print(content)
         output = json.loads(''.join(content.split('\n')[1:-1]))
         # print(output)
-        inferencer = Inferencer('cpu')
+        inferencer = GDinoInferencer('cpu')
         img = Image.open(img_fn).resize((512, 512))
         draw = ImageDraw.Draw(img)
         for obj in output['foods']:
@@ -73,6 +73,7 @@ def main():
                     obj = obj['name']
                 draw.text(bbox, obj, (r, g, b))
         img.save(f'output/{img_fn.split("/")[-1]}')
+
 
 if __name__ == '__main__':
     main()
