@@ -1,1 +1,1 @@
-# detecgpt
+# Playground of skyc5423
