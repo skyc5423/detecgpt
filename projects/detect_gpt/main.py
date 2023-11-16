@@ -10,7 +10,7 @@ from tqdm import tqdm
 from prompts import *
 
 # OpenAI API Key
-api_key = os.environ['OPENAI_API_KEY_BUF']
+api_key = os.environ['OPENAI_API_KEY']
 
 headers = {
     "Content-Type": "application/json",

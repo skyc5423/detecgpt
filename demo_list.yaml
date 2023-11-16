@@ -1,0 +1,8 @@
+- description: Detect objects in photos using GPT vision and GroundingDino.
+  link: http://naver.com
+  name: Detect GPT
+  thumbnail: detect_gpt.png
+#- description: Generate a thumbnail image for a given project description using GPT.
+#  link: http://naver.com
+#  name: Project Thumbnail Generator
+#  thumbnail: project_thumbnail_generator.png
