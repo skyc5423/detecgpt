@@ -3,55 +3,21 @@ import gradio as gr
 from model.groudingdino import GDinoInferencer
 from PIL import Image, ImageDraw
 
-import base64
-from io import BytesIO
 from prompts import *
+from utils import *
 import requests
 import json
 import os
 
 api_key = os.environ['OPENAI_API_KEY']
 
+def inference(x: np.ndarray):
+    # Resize along the long length and padding to 512, 512 to match the size.
+    img = Image.fromarray(x)
+    img = resize_long(img, 512)
+    original_size = img.size
+    img = pad_to_square(img, 512)
 
-def get_payload(base64_image, prompt):
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
-
-    payload = {
-        "model": "gpt-4-vision-preview",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        }
-                    },
-                ]
-            }
-        ],
-        "max_tokens": 1000
-    }
-    return headers, payload
-
-
-def pil_to_base64(image):
-    buffered = BytesIO()
-    image.save(buffered, format="JPEG")
-    return base64.b64encode(buffered.getvalue()).decode('utf-8')
-
-
-def flip_image(x: np.ndarray):
-    height, width = x.shape[:2]
-    img = Image.fromarray(x).resize((512, 512))
     headers, payload = get_payload(pil_to_base64(img), prompt_dish_multiple)
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
 
@@ -69,7 +35,10 @@ def flip_image(x: np.ndarray):
             if isinstance(obj, dict):
                 obj = obj['name']
             draw.text(bbox, obj, (r, g, b))
-    return np.array(img.resize((width, height)))
+
+    img = crop_to_original(img, original_size)
+
+    return np.array(img)
 
 
 if __name__ == '__main__':
@@ -78,13 +47,11 @@ if __name__ == '__main__':
     with gr.Blocks() as demo:
         gr.Markdown("Flip text or image files using this demo.")
         with gr.Row():
-            image_input = gr.Image()
-            image_output = gr.Image()
-        image_button = gr.Button("Flip")
+            image_input = gr.Image(height=512, width=512)
+        with gr.Row():
+            image_output = gr.Image(height=512, width=512)
+        image_button = gr.Button("Detect")
 
-        with gr.Accordion("Open for More!"):
-            gr.Markdown("Look at me...")
-
-        image_button.click(flip_image, inputs=image_input, outputs=image_output)
+        image_button.click(inference, inputs=image_input, outputs=image_output)
 
     demo.launch()
