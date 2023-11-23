@@ -1,7 +1,7 @@
 import numpy as np
 import gradio as gr
 from model.groudingdino import GDinoInferencer
-from PIL import Image, ImageDraw
+from PIL import ImageDraw
 
 from prompts import *
 from utils import *
@@ -46,6 +46,7 @@ def draw_bbox(img, output):
 
     return img, annotations
 
+
 def inference(x: np.ndarray):
     img, original_size = preprocess_img(x)
     output = request_gpt(img)
@@ -65,7 +66,6 @@ if __name__ == '__main__':
             text_output = gr.Textbox(lines=5, label="Output")
 
         image_button = gr.Button("Detect")
-
         image_button.click(inference, inputs=image_input, outputs=[image_output, text_output])
 
     demo.launch()
