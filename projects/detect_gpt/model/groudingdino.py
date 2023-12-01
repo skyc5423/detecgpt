@@ -33,7 +33,7 @@ class GDinoInferencer:
         if isinstance(text_prompt, dict):
             boxes, logits, phrases = predict(model=self.groundingdino,
                                              image=image_trans,
-                                             caption=text_prompt['name'],
+                                             caption=text_prompt['description'],
                                              box_threshold=box_threshold,
                                              text_threshold=text_threshold,
                                              device=self.device)

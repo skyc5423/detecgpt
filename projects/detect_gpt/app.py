@@ -20,11 +20,12 @@ def preprocess_img(img):
     return img, original_size
 
 
-def request_gpt(img):
-    headers, payload = get_payload(pil_to_base64(img), prompt_dish_multiple)
+def request_gpt(img, text_input):
+    headers, payload = get_payload(pil_to_base64(img), text_input)
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
     content = response.json()['choices'][0]['message']['content']
-    output = json.loads(''.join(content.split('\n')[1:-1]))
+    print(content)
+    output = json.loads(content)
 
     return output
 
@@ -33,7 +34,7 @@ def draw_bbox(img, output):
     # draw bbox and make coco style annotation
     annotations = {}
     draw = ImageDraw.Draw(img)
-    for obj in output['foods']:
+    for obj in output['objects']:
         bboxes = inferencer.predict_dino(img, obj)
         for bbox in bboxes:
             r, g, b = np.random.randint(0, 255, 3)
@@ -47,9 +48,9 @@ def draw_bbox(img, output):
     return img, annotations
 
 
-def inference(x: np.ndarray):
+def inference(x: np.ndarray, text_input):
     img, original_size = preprocess_img(x)
-    output = request_gpt(img)
+    output = request_gpt(img, text_input)
     img, coco = draw_bbox(img, output)
     img = crop_to_original(img, original_size)
     return np.array(img), coco
@@ -63,9 +64,10 @@ if __name__ == '__main__':
             image_input = gr.Image(height=512, width=512)
             image_output = gr.Image(height=512, width=512)
         with gr.Row():
+            text_input = gr.Textbox(lines=5, label="Input")
             text_output = gr.Textbox(lines=5, label="Output")
 
         image_button = gr.Button("Detect")
-        image_button.click(inference, inputs=image_input, outputs=[image_output, text_output])
+        image_button.click(inference, inputs=[image_input, text_input], outputs=[image_output, text_output])
 
     demo.launch()

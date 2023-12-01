@@ -2,6 +2,7 @@ import base64
 from io import BytesIO
 import os
 from PIL import Image
+from prompts import *
 
 api_key = os.environ['OPENAI_API_KEY']
 
@@ -15,6 +16,10 @@ def get_payload(base64_image, prompt):
     payload = {
         "model": "gpt-4-vision-preview",
         "messages": [
+            {
+                "role": "system",
+                "content": prompt_system
+            },
             {
                 "role": "user",
                 "content": [

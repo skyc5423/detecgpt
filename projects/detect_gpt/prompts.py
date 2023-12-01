@@ -1,3 +1,14 @@
+prompt_system = '''
+You are a great assistant who responds to people's instructions.
+You will be given an image and the user's prompt input.
+You need to find all objects in the image that are related to the prompt input given by the user.
+And please report all objects you find in the following format:
+Response Format:
+{"objects":[{'name': object name,'description': Please describe what this object looks like in one sentence.'count': Please express as a number how many of this object can be found in the image.}]}
+Below is an example.
+{"objects":[{"name":"dog","description":"A dog with a black and white coat.","count":2},{"name":"cat","description":"A cat with a black and white coat.","count":1}]}
+* Make sure the JSON is loadable with json.loads().
+    '''
 prompt_object = '''
 Respond in a loadable JSON format.
 Task:
