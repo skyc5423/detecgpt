@@ -30,27 +30,20 @@ class GDinoInferencer:
 
     def predict_dino(self, image_pil, text_prompt, box_threshold=0.3, text_threshold=0.3):
         image_trans = self.transform_image(image_pil)
-        if isinstance(text_prompt, dict):
+        box_list = []
+        for desc in text_prompt['descriptions']:
             boxes, logits, phrases = predict(model=self.groundingdino,
                                              image=image_trans,
-                                             caption=text_prompt['description'],
+                                             caption=desc,
                                              box_threshold=box_threshold,
                                              text_threshold=text_threshold,
                                              device=self.device)
-            if len(boxes) > 1:
-                indices = logits.argsort(descending=True)[:text_prompt['count']]
-                boxes = boxes[indices]
-        else:
-            boxes, logits, phrases = predict(model=self.groundingdino,
-                                             image=image_trans,
-                                             caption=text_prompt,
-                                             box_threshold=box_threshold,
-                                             text_threshold=text_threshold,
-                                             device=self.device)
-            boxes = boxes[logits.argmax():logits.argmax() + 1]
-        W, H = image_pil.size
-        boxes = box_ops.box_cxcywh_to_xyxy(boxes) * torch.Tensor([W, H, W, H])
-        return boxes
+            indices = logits.argsort(descending=True)[0]
+            boxes = boxes[indices]
+            W, H = image_pil.size
+            boxes = box_ops.box_cxcywh_to_xyxy(boxes) * torch.Tensor([W, H, W, H])
+            box_list.append(boxes)
+        return box_list
 
 
 def load_model_hf(repo_id, filename, ckpt_config_filename, device='cpu'):
