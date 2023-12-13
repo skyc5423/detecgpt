@@ -5,6 +5,57 @@ import base64
 from dataclasses import dataclass
 import requests
 from typing import Any
+import openai
+import json
+
+
+@dataclass
+class Parameter:
+    name: str
+    description: str
+    required: bool = True
+    type: str = 'string'
+    enum: list = None
+
+    def __repr__(self):
+        return f'Parameter({self.name}, {self.type}, {self.description}, {self.enum})'
+
+
+@dataclass
+class Function:
+    name: str
+    description: str
+    parameters: list
+    function: Any
+
+    def __repr__(self):
+        return f'Function({self.name}, {self.description}, {self.parameters})'
+
+    def _build_parameters(self):
+        parameters = {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+        for parameter in self.parameters:
+            parameters['properties'][parameter.name] = {
+                "type": parameter.type,
+                "description": parameter.description,
+            }
+            if parameter.enum:
+                parameters['properties'][parameter.name]['enum'] = parameter.enum
+            if parameter.required:
+                parameters['required'].append(parameter.name)
+        return parameters
+
+    def _get(self):
+        return {
+            'type': 'function',
+            'function': {
+                'name': self.name,
+                'description': self.description,
+                'parameters': self._build_parameters()}
+        }
 
 
 @dataclass
@@ -12,6 +63,7 @@ class Message:
     role: str
     content_type: str
     content: Any
+    need_function: bool
 
     def __repr__(self):
         if self.content_type == 'text':
@@ -31,18 +83,20 @@ class Message:
         self.content = content
 
     def _get_as_text(self):
-        payload = {"role": self.role,
-                   "content": [{"type": self.content_type,
-                                self.content_type: self.content}]
-                   }
+        payload = {
+            "role": self.role,
+            "content": [{"type": self.content_type,
+                         self.content_type: self.content}]
+        }
         return payload
 
     def _get_as_image_url(self):
         img = self._encode_img(self.content)
-        payload = {"role": self.role,
-                   "content": [{"type": self.content_type,
-                                self.content_type: {"url": f"data:image/jpeg;base64,{img}"}}]
-                   }
+        payload = {
+            "role": self.role,
+            "content": [{"type": self.content_type,
+                         self.content_type: {"url": f"data:image/jpeg;base64,{img}"}}]
+        }
         return payload
 
     def _get(self):
@@ -73,7 +127,7 @@ class GPTHelper:
     }
     _API_URL = "https://api.openai.com/v1/chat/completions"
 
-    def __init__(self, api_key=None, model='gpt-4-vision-preview', max_tokens=1000):
+    def __init__(self, api_key=None, model='gpt-4-vision-preview', max_tokens=1000, function=None):
         assert model in self._PRICE_DICTIONARY.keys(), f"model must be one of {self._PRICE_DICTIONARY.keys()}"
         if model != 'gpt-4-vision-preview':
             raise NotImplementedError("Only gpt-4-vision-preview is supported at the moment")
@@ -81,17 +135,34 @@ class GPTHelper:
         self.api_key = api_key if api_key else os.environ['OPENAI_API_KEY']
         self.model = model
         self.max_tokens = max_tokens
-        self.total_tokens = 0
-        self.total_completion_tokens = 0
-        self.total_prompt_tokens = 0
-        self.previous_tokens = 0
-        self.previous_completion_tokens = 0
-        self.previous_prompt_tokens = 0
+        self.total_tokens = self._initialize_token_usage()
+        self.total_completion_tokens = self._initialize_token_usage()
+        self.total_prompt_tokens = self._initialize_token_usage()
+        self.previous_tokens = self._initialize_token_usage()
+        self.previous_completion_tokens = self._initialize_token_usage()
+        self.previous_prompt_tokens = self._initialize_token_usage()
         self.last_answer = None
+        self.functions = function if function else []
+
+    def _initialize_token_usage(self):
+        return {model: 0 for model in self._PRICE_DICTIONARY.keys()}
+
+    def _function_calling(self, tool_calls):
+        available_functions = {function.name: function.function for function in self.functions}
+        response_list = []
+        for tool_call in tool_calls:
+            function_name = tool_call.function.name
+            function_to_call = available_functions[function_name]
+            function_args = json.loads(tool_call.function.arguments)
+            response_list.append(function_to_call(**function_args))
+        return response_list
 
     def get_price(self):
-        input_price = self.total_prompt_tokens * self._PRICE_DICTIONARY[self.model]['input'] / 1000.
-        output_price = self.total_completion_tokens * self._PRICE_DICTIONARY[self.model]['output'] / 1000.
+        input_price = 0
+        output_price = 0
+        for model in self._PRICE_DICTIONARY.keys():
+            input_price += self.total_prompt_tokens[model] * self._PRICE_DICTIONARY[model]['input'] / 1000.
+            output_price += self.total_completion_tokens[model] * self._PRICE_DICTIONARY[model]['output'] / 1000.
         return f"Total: {input_price + output_price} USD\n" \
                f"Input: {input_price} USD\n" \
                f"Output: {output_price} USD\n"
@@ -111,13 +182,23 @@ class GPTHelper:
         return {"Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}"}
 
-    def _update_token_usage(self, usage):
-        self.previous_tokens = usage['total_tokens']
-        self.previous_completion_tokens = usage['completion_tokens']
-        self.previous_prompt_tokens = usage['prompt_tokens']
-        self.total_tokens += usage['total_tokens']
-        self.total_completion_tokens += usage['completion_tokens']
-        self.total_prompt_tokens += usage['prompt_tokens']
+    def _update_token_usage(self, usage, model=None):
+        if model is None:
+            model = self.model
+        if not isinstance(usage, dict):
+            self.previous_tokens[model] = usage.total_tokens
+            self.previous_completion_tokens[model] = usage.completion_tokens
+            self.previous_prompt_tokens[model] = usage.prompt_tokens
+            self.total_tokens[model] += usage.total_tokens
+            self.total_completion_tokens[model] += usage.completion_tokens
+            self.total_prompt_tokens[model] += usage.prompt_tokens
+        else:
+            self.previous_tokens[model] = usage['total_tokens']
+            self.previous_completion_tokens[model] = usage['completion_tokens']
+            self.previous_prompt_tokens[model] = usage['prompt_tokens']
+            self.total_tokens[model] += usage['total_tokens']
+            self.total_completion_tokens[model] += usage['completion_tokens']
+            self.total_prompt_tokens[model] += usage['prompt_tokens']
 
     def send_messages(self, message_list):
         response = requests.post(self._API_URL,
@@ -129,5 +210,66 @@ class GPTHelper:
         else:
             response = response.json()
             self._update_token_usage(response['usage'])
-            self.last_answer = response['choices'][0]['message']['content']
-            return self.last_answer
+            self.last_answer = Message(
+                role='assistant',
+                content_type='text',
+                content=response['choices'][0]['message']['content'])
+            return self.last_answer.content
+
+    def ask_function(self, message):
+        return self._check_message_need_function_calling(message)
+
+    def add_function(self, function):
+        self.functions.append(function)
+
+    def _check_message_need_function_calling(self, message):
+        if len(self.functions) == 0:
+            return None
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo-1106",
+            messages=[message._get()],
+            tools=[function._get() for function in self.functions],
+            tool_choice="auto",
+        )
+        self._update_token_usage(response.usage, "gpt-3.5-turbo-1106")
+        response_message = response.choices[0].message
+        tool_calls = response_message.tool_calls
+        if tool_calls:
+            return self._function_calling(tool_calls)
+        else:
+            return None
+
+
+def test_helper():
+    def get_current_weather(location, unit="fahrenheit"):
+        if "tokyo" in location.lower():
+            return json.dumps({"location": location, "temperature": "10", "unit": "celsius"})
+        elif "san francisco" in location.lower():
+            return json.dumps({"location": location, "temperature": "72", "unit": "fahrenheit"})
+        else:
+            return json.dumps({"location": location, "temperature": "22", "unit": "celsius"})
+
+    gpt = GPTHelper()
+    message = Message(role='user', content_type='text', content="What's the weather like today")
+    print(gpt.send_messages([message]))
+    print(gpt.get_price())
+    gpt = GPTHelper()
+    gpt.add_function(Function(name='get_current_weather',
+                              description='Get the current weather for a location',
+                              function=get_current_weather,
+                              parameters=[Parameter(name='location',
+                                                    description='The location to get the weather for',
+                                                    required=True,
+                                                    type='string'),
+                                          Parameter(name='unit',
+                                                    description='The unit to get the weather in',
+                                                    required=False,
+                                                    type='string',
+                                                    enum=['fahrenheit', 'celsius'])]
+                              ))
+    print(gpt.ask_function(message))
+    print(gpt.get_price())
+
+
+if __name__ == '__main__':
+    test_helper()
